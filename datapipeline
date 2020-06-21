@@ -1,0 +1,163 @@
+Prerequisites
+appropriate IAM
+
+IAM
+Roles:
+[DataPipelineDefaultRole, AWSDataPipelineRole]
+[DataPipelineDefaultResourceRole, AmazonEC2RoleforDataPipelineRole]
+Group:
+[DataPipelineDevelopers, AWSDataPipeline_FullAccess]
+Custom IAM roles
+
+VPC
+Create a default vpc
+
+SNS
+[aws-project, project]
+[ARN_FOR_CREATED_SNS_TOPIC]
+
+DynamoDB
+aws-project-dynamodb id number
+tags: [env: dev, user: SET_USER_HERE]
+submit init data
+aws dynamodb put-item --table-name aws-project-dynamodb --item file://aws-project-dynamodb-init-data.json --return-consumed-capacity TOTAL
+
+S3
+hello-aws-project-us-west-2-201901, us-west-2
+tags: [env: dev, user: SET_USER_HERE]
+folder: [data, log]
+Access to data folder
+
+Data Pipeline
+aws-project-data-pipeline
+[s3://us-west-2-aws-project-s3-bucket/data/, aws-project-dynamodb, us-west-2, s3://us-west-2-aws-project-s3-bucket/log/]
+tags: [env: dev, user: SET_USER_HERE]
+
+CREATE EXTERNAL TABLE tempHiveTable (#{myDDBColDefn})
+STORED BY 'org.apache.hadoop.hive.dynamodb.DynamoDBStorageHandler' 
+TBLPROPERTIES ("dynamodb.table.name" = "#{myDDBTableName}", "dynamodb.column.mapping" = "#{myDDBTableColMapping}");
+
+CREATE EXTERNAL TABLE s3TempTable (#{myS3ColMapping})
+ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' LINES TERMINATED BY '
+' LOCATION '#{myInputS3Loc}'
+tblproperties ("skip.header.line.count"="1");
+
+aws-project-dynamodb-init-data.json
+{"Brand":{"S":"Brand C"},"Price":{"N":"500"},"ProductCategory":{"S":"Bicycle"},"Title":{"S":"50-Bike-500"},"id":{"N":"1"},"BicycleType":{"S":"hybrid"}}
+
+aws-project-dynamodb.csv
+
+2	hybrid	Brand A	400	Bicycle	40-Bike-410
+3	hybrid	Brand D	300	Bicycle	30-Bike-300
+
+
+
+ CSVtoDynamoDB.json
+{
+  "objects": [
+    {
+      "myComment" : "Activity used to run the hive script to import CSV data",
+      "output": {
+        "ref": "DataNodeId_cnlSW"
+      },
+      "input": {
+        "ref": "DataNodeId_1ERqq"
+      },
+      "name": "TableActivity",
+      "hiveScript": "DROP TABLE IF EXISTS tempHiveTable;\n\nDROP TABLE IF EXISTS s3TempTable;\n\nCREATE EXTERNAL TABLE tempHiveTable (#{myDDBColDefn})\nSTORED BY 'org.apache.hadoop.hive.dynamodb.DynamoDBStorageHandler' \nTBLPROPERTIES (\"dynamodb.table.name\" = \"#{myDDBTableName}\", \"dynamodb.column.mapping\" = \"#{myDDBTableColMapping}\");\n                    \nCREATE EXTERNAL TABLE s3TempTable (#{myS3ColMapping})\nROW FORMAT DELIMITED FIELDS TERMINATED BY ',' LINES TERMINATED BY '\\\n' LOCATION '#{myInputS3Loc}' \nTBLPROPERTIES (\"skip.header.line.count\"=\"1\");\n                    \nINSERT OVERWRITE TABLE tempHiveTable SELECT * FROM s3TempTable;",
+      "id": "TableActivity",
+      "runsOn": { "ref" : "EmrClusterForRestore" },
+      "stage": "false",
+      "type": "HiveActivity"
+    },
+    {
+      "myComment" : "The DynamoDB table from which we need to import data",
+      "dataFormat": {
+        "ref": "DDBExportFormat"
+      },
+      "name": "DynamoDB",
+      "id": "DataNodeId_1ERqq",
+      "type": "DynamoDBDataNode",
+      "tableName": "#{myDDBTableName}"
+    },
+    {
+      "failureAndRerunMode": "CASCADE",
+      "resourceRole": "DataPipelineDefaultResourceRole",
+      "role": "DataPipelineDefaultRole",
+      "pipelineLogUri": "#{myLogUri}",
+      "scheduleType": "ONDEMAND",
+      "name": "Default",
+      "id": "Default"
+    },
+    {
+      "name": "EmrClusterForRestore",
+      "coreInstanceType": "m3.large",
+      "coreInstanceCount": "1",
+      "masterInstanceType": "m3.large",
+      "releaseLabel": "emr-5.20.0",
+      "id": "EmrClusterForRestore",
+      "type": "EmrCluster",
+      "terminateAfter": "25 Minutes"
+    },
+    {
+      "myComment" : "The S3 path from which we import data",
+      "directoryPath": "#{myInputS3Loc}",
+      "dataFormat": {
+        "ref": "DataFormatId_xqWRk"
+      },
+      "name": "S3DataNode",
+      "id": "DataNodeId_cnlSW",
+      "type": "S3DataNode"
+    },
+    {
+      "myComment" : "Following Format for the S3 Path",
+      "name": "DefaultDataFormat1",
+      "column": "not_used STRING",
+      "id": "DataFormatId_xqWRk",
+      "type": "CSV"
+    },
+    {
+      "myComment" : "Following Format for the DynamoDB table",
+      "name": "DDBExportFormat",
+      "id": "DDBExportFormat",
+      "column": "not_used STRING",
+      "type": "DynamoDBExportDataFormat"
+    }
+  ],
+  "parameters": [
+    {
+      "description": "Input S3 folder",
+      "id": "myInputS3Loc",
+      "default": "s3://hello-aws-project-us-west-2-201901/data",
+      "type": "AWS::S3::ObjectKey"
+    },
+    {
+      "description": "DynamoDB table name",
+      "id": "myDDBTableName",
+      "type": "String"
+    },
+    {
+      "description": "S3 to DynamoDB - Column Mapping",
+      "id": "myDDBTableColMapping",
+      "default" : "id:id,BicycleType:BicycleType,Brand:Brand,ProductCategory:ProductCategory,Price:Price,Title:Title",
+      "type": "String"
+    },
+    {
+      "description": "S3 - Column Mappings",
+      "id": "myS3ColMapping",
+      "default" : "id BIGINT,BicycleType STRING,Brand STRING,Price DOUBLE,ProductCategory STRING,Title STRING",
+      "type": "String"
+    },
+    {
+      "description": "DynamoDB - Column Mappings",
+      "id": "myDDBColDefn",
+      "default" : "id BIGINT,BicycleType STRING,Brand STRING,Price DOUBLE,ProductCategory STRING,Title STRING",
+      "type": "STRING"
+    },
+    {
+      "description": "DataPipeline Log Uri",
+      "id": "myLogUri",
+      "type": "AWS::S3::ObjectKey"
+    }
+  ]
+}
