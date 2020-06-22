@@ -1,0 +1,520 @@
+Using Terraform to build up the infrastructure by creating VPC and private/public subnets alongs with the IAM roles and policies.
+
+
+
+
+variable "managed_policy_arn" {
+  type = "list"
+  default = ["arn:aws:iam::aws:policy/IAMFullAccess",
+             "arn:aws:iam::aws:policy/ReadOnlyAccess",
+             "arn:aws:iam::aws:policy/AWSSupportAccess",
+             "arn:aws:iam::123456789123:policy/DecodeMsgPolicy"]
+}
+
+#-----------------------------
+#IAM ROLES
+#-----------------------------
+resource "aws_iam_role" "admin" {
+    name               = "admin"
+    path               = "/"
+    assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::123456789123:saml-provider/shc-internal-ldap"
+      },
+      "Action": "sts:AssumeRoleWithSAML",
+      "Condition": {
+        "StringEquals": {
+          "SAML:aud": "https://signin.aws.amazon.com/saml"
+        }
+      }
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_role" "sec-iam" {
+    name               = "sec-iam"
+    path               = "/"
+    assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::123456789123:saml-provider/shc-internal-ldap"
+      },
+      "Action": "sts:AssumeRoleWithSAML",
+      "Condition": {
+        "StringEquals": {
+          "SAML:aud": "https://signin.aws.amazon.com/saml"
+        }
+      }
+    }
+  ]
+}
+EOF
+}
+
+#----------------------------
+#IAM POLICIES
+#----------------------------
+resource "aws_iam_policy" "CloudGovernorPolicy" {
+  name        = "CloudGovernorPolicy"
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+            "autoscaling:CreateAutoScalingGroup",
+            "autoscaling:CreateLaunchConfiguration",
+            "autoscaling:CreateOrUpdateTags",
+            "autoscaling:DeleteAutoScalingGroup",
+            "autoscaling:DeleteLaunchConfiguration",
+            "autoscaling:DescribeAutoScalingGroups",
+            "autoscaling:DescribeLaunchConfigurations",
+            "autoscaling:DescribeScalingActivities",
+            "autoscaling:UpdateAutoScalingGroup",
+            "cloudformation:*",
+            "cloudtrail:DescribeTrails",
+            "cloudtrail:ListTags",
+            "cloudtrail:LookupEvents",
+            "cloudwatch:*",
+            "codedeploy:*",
+            "codepipeline:*",
+            "config:*",
+            "dms:Delete*",
+            "dms:Describe*",
+            "dms:ListTagsForResource",
+            "dynamodb:*",
+            "ec2:AuthorizeSecurityGroupIngress",
+            "ec2:CreateNetworkInterface",
+            "ec2:CreateSecurityGroup",
+            "ec2:CreateTags",
+            "ec2:DeleteNetworkInterface",
+            "ec2:DeleteSecurityGroup",
+            "ec2:DeregisterImage",
+            "ec2:Describe*",
+            "ec2:DescribeVpcs",
+            "ec2:RevokeSecurityGroupIngress",
+            "ec2:AuthorizeSecurityGroupEgress",
+            "ec2:RevokeSecurityGroupEgress",
+            "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
+            "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
+            "ec2:StopInstances",
+            "ecs:*",
+            "elasticfilesystem:Delete*",
+            "elasticfilesystem:Describe*",
+            "elasticloadbalancing:AddTags",
+            "elasticloadbalancing:CreateListener",
+            "elasticloadbalancing:CreateLoadBalancer",
+            "elasticloadbalancing:CreateTargetGroup",
+            "elasticloadbalancing:Delete*",
+            "elasticloadbalancing:Describe*",
+            "es:Delete*",
+            "es:Describe*",
+            "es:List*",
+            "events:*",
+            "iam:AddRoleToInstanceProfile",
+            "iam:AttachRolePolicy",
+            "iam:CreateInstanceProfile",
+            "iam:CreateRole",
+            "iam:CreateServiceLinkedRole",
+            "iam:DeleteInstanceProfile",
+            "iam:DeleteRole",
+            "iam:DeleteRolePolicy",
+            "iam:DetachRolePolicy",
+            "iam:GetInstanceProfile",
+            "iam:GetRole",
+            "iam:PassRole",
+            "iam:PutRolePolicy",
+            "iam:RemoveRoleFromInstanceProfile",
+            "iam:GetUser",
+            "iam:CreateUser",
+            "iam:DeleteUser",
+            "iam:PutUserPolicy",
+            "iam:ListAccessKeys",
+            "iam:DeleteUserPolicy",
+            "kinesis:Delete*",
+            "kinesis:Delete*",
+            "kinesis:List*",
+            "kms:*",
+            "lambda:*",
+            "logs:*",
+            "rds:Describe*",
+            "rds:List*",
+            "rds:Stop*",
+            "route53:Delete*",
+            "route53:List*",
+            "s3:Get*",
+            "s3:List*",
+            "s3:PutObject",
+            "ses:*",
+            "sns:*",
+            "sts:*"
+        ],
+        "Resource": "*"
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_policy" "DecodeMsgPolicy" {
+  name        = "DecodeMsgPolicy"
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+      {
+          "Effect": "Allow",
+          "Action": [
+              "sts:DecodeAuthorizationMessage"
+          ],
+          "Resource": "*"
+      }
+  ]
+}
+EOF
+}
+
+#------------------------------
+#IAM POLICY ATTACHMENTS
+#------------------------------
+resource "aws_iam_role_policy_attachment" "role-policy-attachment" {
+  role       = "sec-iam"
+  count      = "${length(var.managed_policy_arn)}"
+  policy_arn = "${var.managed_policy_arn[count.index]}"
+
+  depends_on = [aws_iam_role.sec-iam]
+}
+
+resource "aws_iam_role_policy_attachment" "CloudGovernorRole-policy-attachment" {
+  role       = "CloudGovernorRole"
+  policy_arn = "arn:aws:iam::123456789123:policy/CloudGovernorPolicy"
+
+  depends_on = [aws_iam_role.CloudGovernorRole]
+}
+
+resource "aws_iam_role_policy_attachment" "AWSCloudFormationStackSetExecutionRole-policy-attachment" {
+  role       = "AWSCloudFormationStackSetExecutionRole"
+  policy_arn = "arn:aws:iam::123456789123:policy/CloudGovernorPolicy"
+
+  depends_on = [aws_iam_role.AWSCloudFormationStackSetExecutionRole]
+}
+
+
+
+#Creating VPC and getting CidrBlock as Variable
+resource "aws_vpc" "VPC" {
+  cidr_block       = "${var.VpcFirstOctect}.${var.VpcSecondOctect}.${var.VpcThirdOctect}.${var.VpcForthOctect}/${var.VpcCIDR}"
+  enable_dns_support = "true"
+  enable_dns_hostnames = "true"
+
+  tags = {
+    Name = "${var.EnvironmentName}-VPC"
+  }
+}
+
+
+#creating a InternetGateway and attaching the InternetGateway to Vpc
+
+resource "aws_internet_gateway" "InternetGateway" {
+  vpc_id = "${aws_vpc.VPC.id}"
+
+  tags = {
+    Name = "${var.EnvironmentName}-IGW"
+    GROUP ="${var.GROUP}"
+    APPACCESS="${var.APPACCESS}"
+    COSTCENTER="${var.COSTCENTER}"
+  }
+}
+
+#definied the availability_zone
+
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+#creating PrivateSubnet1 in the AvailabilityZone 0
+
+resource "aws_subnet" "PrivateSubnet1" {
+  vpc_id     = "${aws_vpc.VPC.id}"
+  availability_zone = "${data.aws_availability_zones.available.names[0]}"
+  cidr_block = "${var.VpcFirstOctect}.${var.VpcSecondOctect}.${var.VpcThirdOctect}.0/26"
+  map_public_ip_on_launch="false"
+
+  tags = {
+    Name = "${var.EnvironmentName}-Private-ZoneA"
+  }
+}
+
+#creating PrivateSubnet2 in the AvailabilityZone 1
+
+resource "aws_subnet" "PrivateSubnet2" {
+  vpc_id     = "${aws_vpc.VPC.id}"
+  availability_zone = "${data.aws_availability_zones.available.names[1]}"
+  cidr_block = "${var.VpcFirstOctect}.${var.VpcSecondOctect}.${var.VpcThirdOctect}.64/27"
+  map_public_ip_on_launch="false"
+
+  tags = {
+    Name = "${var.EnvironmentName}-Private-ZoneB"
+  }
+}
+
+#creating PrivateSubnet3 in the AvailabilityZone 2
+
+
+resource "aws_subnet" "PrivateSubnet3" {
+  vpc_id     = "${aws_vpc.VPC.id}"
+  availability_zone = "${data.aws_availability_zones.available.names[2]}"
+  cidr_block = "${var.VpcFirstOctect}.${var.VpcSecondOctect}.${var.VpcThirdOctect}.96/27"
+  map_public_ip_on_launch="false"
+
+  tags = {
+    Name = "${var.EnvironmentName}-Private-ZoneC"
+  }
+}
+
+#creating PrivateELBSubnet1  in availability_zone 0
+
+resource "aws_subnet" "PrivateELBSubnet1" {
+  vpc_id     = "${aws_vpc.VPC.id}"
+  availability_zone = "${data.aws_availability_zones.available.names[0]}"
+  cidr_block = "${var.VpcFirstOctect}.${var.VpcSecondOctect}.${var.VpcThirdOctect}.128/27"
+  map_public_ip_on_launch="false"
+
+  tags = {
+    Name = "${var.EnvironmentName}-PrivateELB-ZoneA"
+  }
+}
+
+
+#creating PrivateELBSubnet2  in availability_zone 1
+
+
+resource "aws_subnet" "PrivateELBSubnet2" {
+  vpc_id     = "${aws_vpc.VPC.id}"
+  availability_zone = "${data.aws_availability_zones.available.names[1]}"
+  cidr_block = "${var.VpcFirstOctect}.${var.VpcSecondOctect}.${var.VpcThirdOctect}.160/27"
+  map_public_ip_on_launch="false"
+
+  tags = {
+    Name = "${var.EnvironmentName}-PrivateELB-ZoneB"
+  }
+}
+
+#creating PublicSubnet1  in availability_zone 0
+
+resource "aws_subnet" "PublicSubnet1" {
+  vpc_id     = "${aws_vpc.VPC.id}"
+  availability_zone = "${data.aws_availability_zones.available.names[0]}"
+  cidr_block = "${var.VpcFirstOctect}.${var.VpcSecondOctect}.${var.VpcThirdOctect}.192/28"
+  map_public_ip_on_launch="false"
+
+  tags = {
+    Name = "${var.EnvironmentName}-Public-ZoneA"
+  }
+}
+
+#creating PrivateELBSubnet2  in availability_zone 1
+resource "aws_subnet" "PublicSubnet2" {
+  vpc_id     = "${aws_vpc.VPC.id}"
+  availability_zone = "${data.aws_availability_zones.available.names[1]}"
+  cidr_block = "${var.VpcFirstOctect}.${var.VpcSecondOctect}.${var.VpcThirdOctect}.208/28"
+  map_public_ip_on_launch="false"
+
+  tags = {
+    Name = "${var.EnvironmentName}-Public-ZoneB"
+  }
+}
+
+#Creating PublicELBSubnet1 in availability_zone 0
+
+resource "aws_subnet" "PublicELBSubnet1" {
+  vpc_id     = "${aws_vpc.VPC.id}"
+  availability_zone = "${data.aws_availability_zones.available.names[0]}"
+  cidr_block = "${var.VpcFirstOctect}.${var.VpcSecondOctect}.${var.VpcThirdOctect}.224/28"
+  map_public_ip_on_launch="false"
+
+  tags = {
+    Name = "${var.EnvironmentName}-PublicELB-ZoneA"
+  }
+}
+
+#Creating PublicELBSubnet2 in availability_zone 1
+
+resource "aws_subnet" "PublicELBSubnet2" {
+  vpc_id     = "${aws_vpc.VPC.id}"
+  availability_zone = "${data.aws_availability_zones.available.names[1]}"
+  cidr_block = "${var.VpcFirstOctect}.${var.VpcSecondOctect}.${var.VpcThirdOctect}.240/28"
+  map_public_ip_on_launch="false"
+
+  tags = {
+    Name = "${var.EnvironmentName}-PublicELB-ZoneB"
+  }
+}
+
+#creating aws_eip
+
+resource "aws_eip" "NatGateway1EIP" {
+  vpc = "true"
+  depends_on = ["aws_internet_gateway.InternetGateway"]
+}
+
+#creating NAT Gateway for PublicSubnet1
+
+resource "aws_nat_gateway" "NatGateway1" {
+  allocation_id = "${aws_eip.NatGateway1EIP.id}"
+  subnet_id     = "${aws_subnet.PublicSubnet1.id}"
+
+  tags = {
+    GROUP ="${var.GROUP}"
+    APPACCESS="${var.APPACCESS}"
+    COSTCENTER="${var.COSTCENTER}"
+  }
+}
+
+#PublicRouteTable with InternetGateway and route all traffic
+
+resource "aws_route_table" "PublicRouteTable" {
+  vpc_id = "${aws_vpc.VPC.id}"
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = "${aws_internet_gateway.InternetGateway.id}"
+  }
+  tags = {
+    Name = "${var.EnvironmentName}-Public-RTB"
+  }
+}
+
+#Assocaiting the PublicSubnet1 into PublicRouteTable
+
+resource "aws_route_table_association" "PublicSubnet1RouteTableAssociation" {
+  subnet_id      = "${aws_subnet.PublicSubnet1.id}"
+  route_table_id = "${aws_route_table.PublicRouteTable.id}"
+}
+
+#Assocaiting the PublicSubnet2 into PublicRouteTable
+
+resource "aws_route_table_association" "PublicSubnet2SubnetRouteTableAssociation" {
+  subnet_id      = "${aws_subnet.PublicSubnet2.id}"
+  route_table_id = "${aws_route_table.PublicRouteTable.id}"
+}
+
+#Assocaiting the PublicELBSubnet1RouteTableAssociation into PublicRouteTable
+
+
+resource "aws_route_table_association" "PublicELBSubnet1RouteTableAssociation" {
+  subnet_id      = "${aws_subnet.PublicELBSubnet1.id}"
+  route_table_id = "${aws_route_table.PublicRouteTable.id}"
+}
+
+#Assocaiting the PublicELBSubnet2RouteTableAssociation into PublicRouteTable
+
+
+resource "aws_route_table_association" "PublicELBSubnet2RouteTableAssociation" {
+  subnet_id      = "${aws_subnet.PublicELBSubnet2.id}"
+  route_table_id = "${aws_route_table.PublicRouteTable.id}"
+}
+
+resource "aws_route_table" "PrivateRouteTable" {
+    vpc_id = "${aws_vpc.VPC.id}"
+    route {
+        cidr_block = "0.0.0.0/0"
+        nat_gateway_id = "${aws_nat_gateway.NatGateway1.id}"
+    }
+
+tags = {
+    Name = "${var.EnvironmentName}-Public-RTB"
+  }
+}
+
+
+
+resource "aws_route_table_association" "PrivateSubnet1RouteTableAssociation" {
+    subnet_id = "${aws_subnet.PrivateSubnet1.id}"
+    route_table_id = "${aws_route_table.PrivateRouteTable.id}"
+}
+resource "aws_route_table_association" "PrivateSubnet2RouteTableAssociation" {
+    subnet_id = "${aws_subnet.PrivateSubnet2.id}"
+    route_table_id = "${aws_route_table.PrivateRouteTable.id}"
+}
+
+resource "aws_route_table_association" "PrivateSubnet3RouteTableAssociation" {
+    subnet_id = "${aws_subnet.PrivateSubnet3.id}"
+    route_table_id = "${aws_route_table.PrivateRouteTable.id}"
+}
+
+resource "aws_route_table_association" "PrivateELBSubnet1RouteTableAssociation" {
+    subnet_id = "${aws_subnet.PrivateELBSubnet1.id}"
+    route_table_id = "${aws_route_table.PrivateRouteTable.id}"
+}
+
+
+resource "aws_route_table_association" "PrivateELBSubnet2RouteTableAssociation" {
+    subnet_id = "${aws_subnet.PrivateELBSubnet2.id}"
+    route_table_id = "${aws_route_table.PrivateRouteTable.id}"
+}
+
+
+
+
+resource "aws_vpn_gateway" "vpn_gw" {
+  vpc_id = "${aws_vpc.VPC.id}"
+  amazon_side_asn= "64512"
+
+  tags = {
+    Name = "Transit VPC Endpoint1",
+    GROUP = "${var.GROUP}",
+    APPACCESS = "${var.APPACCESS}",
+    COSTCENTER = "${var.COSTCENTER}"
+  }
+}
+
+
+
+
+
+resource "aws_vpn_gateway_route_propagation" "PrivateRoutePropagation" {
+  vpn_gateway_id = "${aws_vpn_gateway.vpn_gw.id}"
+  route_table_id = "${aws_route_table.PrivateRouteTable.id}"
+}
+
+
+resource "aws_security_group" "sg_22" {
+  name = "sg_22"
+  vpc_id = "${aws_vpc.VPC.id}"
+
+  # SSH access from the VPC
+  ingress {
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+}
+
+resource "aws_cloudwatch_event_permission" "DevAccount" {
+  principal    = "123456789123"
+  statement_id = "DevAccount"
+}
+
