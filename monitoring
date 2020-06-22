@@ -1,0 +1,6 @@
+For the Above architectures, would use AWS Cloud Watch, Cloud Trail
+
+We can integrate Cloud Trail in data pipeline that provides a record of actions taken by a user, role, or an AWS service in AWS Data Pipeline. CloudTrail captures all API calls for AWS Data Pipeline as events.
+Cloudwatch can also be used to show the metrics from the instances where the activities is running. Though is not very convenient, but we can find a specific instance where the pipeline was running, and if we have a pipeline failure or performance issue correlate that metrics to the problem.
+
+Amazon CloudWatch Events will monitors the AWS resources and the applications we run on AWS. Amazon CloudWatch Events can detect and react to changes in the state of a pipeline, stage, or action. Then, based on rules that we are setting up, CloudWatch Events invokes one or more target actions when a pipeline, stage, or action enters the state we specify in a rule. Depending on the type of state change, we might want to send notifications if needed, capture state information.
